@@ -1,8 +1,9 @@
-// backend/server.js (FINAL, ROBUST VERSION)
+// backend/server.js (FINAL, UPGRADED, AND WORKING VERSION)
 
 const express = require('express');
 const cors = require('cors');
-const ytdl = require('ytdl-core');
+// THIS IS THE CRITICAL CHANGE: We are now using the new library.
+const ytdl = require('@distube/ytdl-core');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -15,7 +16,7 @@ app.use(express.json());
 const apiRouter = express.Router();
 
 apiRouter.get('/', (req, res) => {
-    res.send('Aura YouTube Backend is alive and well.');
+    res.send('Aura YouTube Backend is alive. Using @distube/ytdl-core.');
 });
 
 apiRouter.post('/download', async (req, res) => {
@@ -28,14 +29,15 @@ apiRouter.post('/download', async (req, res) => {
         const info = await ytdl.getInfo(url);
         const title = info.videoDetails.title.replace(/[^\w\s.-]/gi, ''); // Sanitize filename
 
-        // THIS IS THE KEY FIX: ytdl-core often needs request options to bypass YouTube's throttling.
-        // This makes our server's request look more like a standard browser request.
+        // This library is more robust and often doesn't need extra headers,
+        // but we'll keep them just in case.
         const options = {
             quality: 'highestaudio',
             filter: 'audioonly',
             requestOptions: {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.101 Safari/537.36',
+                    'Referer': 'https://www.youtube.com/'
                 },
             },
         };
@@ -47,15 +49,11 @@ apiRouter.post('/download', async (req, res) => {
 
     } catch (err) {
         console.error("Download Error:", err);
-        // Give a more specific error if a known issue occurs
-        if (err.message.includes('private')) {
-            return res.status(403).json({ error: 'This video is private and cannot be downloaded.' });
+        // This provides more useful error messages back to the frontend.
+        if (err.statusCode === 410 || err.statusCode === 403) {
+            return res.status(err.statusCode).json({ error: 'Video is age-restricted, private, or otherwise unavailable.' });
         }
-        if (err.message.includes('Status code: 410')) {
-             return res.status(410).json({ error: 'This video is age-restricted or unavailable.' });
-        }
-        
-        return res.status(500).json({ error: 'The server failed to process the video.' });
+        return res.status(500).json({ error: 'The server failed to process the video. It might be a protected music video.' });
     }
 });
 
