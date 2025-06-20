@@ -1,64 +1,59 @@
-// backend/server.js (FINAL, CORS-FIXED, WORKING VERSION)
+// backend/server.js (FINAL, POWERFUL, WORKING VERSION)
 
 const express = require('express');
 const cors = require('cors');
-const ytdl = require('@distube/ytdl-core');
+const play = require('play-dl');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// --- CRITICAL CORS FIX ---
-// The browser sends a "preflight" OPTIONS request to check permissions before
-// sending the actual POST request. We need to handle this explicitly.
-// This `cors()` configuration is more robust and explicitly allows everything we need.
-app.use(cors({
-  origin: '*', // Allow requests from any origin
-  methods: ['GET', 'POST', 'OPTIONS'], // Allow these methods
-  allowedHeaders: ['Content-Type', 'Authorization'] // Allow these headers
-}));
-
 // --- Middleware ---
+app.use(cors({
+  origin: '*', 
+  methods: ['GET', 'POST', 'OPTIONS'], 
+  allowedHeaders: ['Content-Type', 'Authorization'] 
+}));
 app.use(express.json());
 
 // --- Routes ---
 const apiRouter = express.Router();
 
 apiRouter.get('/', (req, res) => {
-    res.send('Aura YouTube Backend is alive and ready for requests.');
+    res.send('Aura YouTube Backend is online. Using play-dl.');
 });
 
 apiRouter.post('/download', async (req, res) => {
     try {
         const { url } = req.body;
-        if (!url || !ytdl.validateURL(url)) {
+        if (!url || !play.validate(url)) {
             return res.status(400).json({ error: 'A valid YouTube URL is required.' });
         }
 
-        const info = await ytdl.getInfo(url);
-        const title = info.videoDetails.title.replace(/[^\w\s.-]/gi, '');
+        // 1. Search for the video to get its info. This is a more robust first step.
+        const searchResults = await play.search(url, { limit: 1 });
+        if (searchResults.length === 0) {
+            return res.status(404).json({ error: 'Video not found.' });
+        }
+        
+        const video = searchResults[0];
+        const title = video.title.replace(/[^\w\s.-]/gi, ''); // Sanitize filename
 
-        const options = {
-            quality: 'highestaudio',
-            filter: 'audioonly',
-            requestOptions: {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.101 Safari/537.36',
-                    'Referer': 'https://www.youtube.com/'
-                },
-            },
-        };
+        // 2. Fetch the audio stream from the video.
+        // play-dl handles all the complex logic of finding a working stream.
+        const stream = await play.stream(video.url, {
+            quality: 2 // 0 = lowest, 1 = medium, 2 = highest
+        });
         
         res.setHeader('Content-Disposition', `attachment; filename="${title}.mp3"`);
-        res.setHeader('Content-Type', 'audio/mpeg');
+        res.setHeader('Content-Type', stream.type);
         
-        ytdl(url, options).pipe(res);
+        // 3. Pipe the stream directly to the response.
+        stream.stream.pipe(res);
 
     } catch (err) {
         console.error("Download Error:", err);
-        if (err.statusCode === 410 || err.statusCode === 403) {
-            return res.status(err.statusCode).json({ error: 'Video is age-restricted, private, or unavailable.' });
-        }
-        return res.status(500).json({ error: 'The server failed to process the video. It might be a protected music video.' });
+        // Provide more useful error messages back to the frontend.
+        return res.status(500).json({ error: 'Server failed to process video. It may be protected or unavailable.' });
     }
 });
 
