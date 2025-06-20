@@ -1,12 +1,11 @@
 {
-  "name": "backend",
+  "name": "aura-backend-final",
   "version": "1.0.0",
-  "description": "",
+  "description": "A stable backend for Aura music player",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
-  "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
