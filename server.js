@@ -1,4 +1,4 @@
-// backend/server.js (CORRECTED AND MORE ROBUST)
+// backend/server.js (FINAL, ROBUST VERSION)
 
 const express = require('express');
 const cors = require('cors');
@@ -11,16 +11,13 @@ const PORT = process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json());
 
-// --- Create a Router ---
-// This is a more stable way to define routes and avoids common 404 errors.
+// --- Routes ---
 const apiRouter = express.Router();
 
-// Test route
 apiRouter.get('/', (req, res) => {
-    res.send('Aura YouTube Backend is alive.');
+    res.send('Aura YouTube Backend is alive and well.');
 });
 
-// The main download route
 apiRouter.post('/download', async (req, res) => {
     try {
         const { url } = req.body;
@@ -29,23 +26,39 @@ apiRouter.post('/download', async (req, res) => {
         }
 
         const info = await ytdl.getInfo(url);
-        const title = info.videoDetails.title.replace(/[^\w\s.-]/gi, ''); // Sanitize filename even better
+        const title = info.videoDetails.title.replace(/[^\w\s.-]/gi, ''); // Sanitize filename
 
+        // THIS IS THE KEY FIX: ytdl-core often needs request options to bypass YouTube's throttling.
+        // This makes our server's request look more like a standard browser request.
+        const options = {
+            quality: 'highestaudio',
+            filter: 'audioonly',
+            requestOptions: {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.101 Safari/537.36',
+                },
+            },
+        };
+        
         res.setHeader('Content-Disposition', `attachment; filename="${title}.mp3"`);
         res.setHeader('Content-Type', 'audio/mpeg');
-
-        ytdl(url, { quality: 'highestaudio', filter: 'audioonly' }).pipe(res);
+        
+        ytdl(url, options).pipe(res);
 
     } catch (err) {
-        console.error("Download Error:", err.message);
-        // Provide a more specific error message if possible
-        const errorMessage = err.message.includes('private') ? 'Video is private or unavailable.' : 'Failed to process video.';
-        res.status(500).json({ error: errorMessage });
+        console.error("Download Error:", err);
+        // Give a more specific error if a known issue occurs
+        if (err.message.includes('private')) {
+            return res.status(403).json({ error: 'This video is private and cannot be downloaded.' });
+        }
+        if (err.message.includes('Status code: 410')) {
+             return res.status(410).json({ error: 'This video is age-restricted or unavailable.' });
+        }
+        
+        return res.status(500).json({ error: 'The server failed to process the video.' });
     }
 });
 
-// --- Use the Router ---
-// Tell the app to use our router for all requests starting with "/"
 app.use('/', apiRouter);
 
 // --- Start Server ---
