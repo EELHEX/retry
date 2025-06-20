@@ -1,22 +1,30 @@
-// backend/server.js (FINAL, UPGRADED, AND WORKING VERSION)
+// backend/server.js (FINAL, CORS-FIXED, WORKING VERSION)
 
 const express = require('express');
 const cors = require('cors');
-// THIS IS THE CRITICAL CHANGE: We are now using the new library.
 const ytdl = require('@distube/ytdl-core');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+// --- CRITICAL CORS FIX ---
+// The browser sends a "preflight" OPTIONS request to check permissions before
+// sending the actual POST request. We need to handle this explicitly.
+// This `cors()` configuration is more robust and explicitly allows everything we need.
+app.use(cors({
+  origin: '*', // Allow requests from any origin
+  methods: ['GET', 'POST', 'OPTIONS'], // Allow these methods
+  allowedHeaders: ['Content-Type', 'Authorization'] // Allow these headers
+}));
+
 // --- Middleware ---
-app.use(cors());
 app.use(express.json());
 
 // --- Routes ---
 const apiRouter = express.Router();
 
 apiRouter.get('/', (req, res) => {
-    res.send('Aura YouTube Backend is alive. Using @distube/ytdl-core.');
+    res.send('Aura YouTube Backend is alive and ready for requests.');
 });
 
 apiRouter.post('/download', async (req, res) => {
@@ -27,10 +35,8 @@ apiRouter.post('/download', async (req, res) => {
         }
 
         const info = await ytdl.getInfo(url);
-        const title = info.videoDetails.title.replace(/[^\w\s.-]/gi, ''); // Sanitize filename
+        const title = info.videoDetails.title.replace(/[^\w\s.-]/gi, '');
 
-        // This library is more robust and often doesn't need extra headers,
-        // but we'll keep them just in case.
         const options = {
             quality: 'highestaudio',
             filter: 'audioonly',
@@ -49,9 +55,8 @@ apiRouter.post('/download', async (req, res) => {
 
     } catch (err) {
         console.error("Download Error:", err);
-        // This provides more useful error messages back to the frontend.
         if (err.statusCode === 410 || err.statusCode === 403) {
-            return res.status(err.statusCode).json({ error: 'Video is age-restricted, private, or otherwise unavailable.' });
+            return res.status(err.statusCode).json({ error: 'Video is age-restricted, private, or unavailable.' });
         }
         return res.status(500).json({ error: 'The server failed to process the video. It might be a protected music video.' });
     }
